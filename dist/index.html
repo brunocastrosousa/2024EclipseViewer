@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en" >
+<head>
+  <meta charset="UTF-8">
+  <title>CodePen - eclipse</title>
+  
+
+</head>
+<body>
+<!-- partial:index.partial.html -->
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>Cursor to Line Angle with Visual Aid - ArcGIS API for JavaScript</title>
+  <link rel="stylesheet" href="https://js.arcgis.com/4.23/esri/themes/light/main.css">
+  <script src="https://js.arcgis.com/4.23/"></script>
+
+  <style>
+    body,
+    html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+    }
+
+    #viewDiv {
+      height: 100%;
+      width: 100%;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #angleDisplay {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      background: white;
+      padding: 10px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+
+    .arrow {
+      width: 40px;
+      height: 40px;
+      position: absolute;
+      top: 60px;
+      left: 20px;
+      transform-origin: 50% 50%;
+    }
+
+    #customPopup {
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1 !important;
+      width: auto;
+      height: auto;
+      border-radius: 10px;
+      background-color: white;
+      padding: 10px;
+      box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+      overflow: hidden;
+    }
+
+    #attribution {
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1 !important;
+      width: auto;
+      height: auto;
+      background-color: white;
+      padding: 5px;
+      box-shadow: 0 1px 1px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+      overflow: hidden;
+    }
+
+    /* CSS for the tooltip */
+    .tooltip {
+      display: none;
+      /* Initially hidden */
+      background-color: black;
+      color: white;
+      width: auto;
+      white-space: nowrap;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      position: absolute;
+      z-index: 1000;
+    }
+  </style>
+
+  <script>
+    require([
+      "esri/Map",
+      "esri/views/MapView",
+      "esri/WebMap",
+      "esri/layers/FeatureLayer",
+      "esri/geometry/geometryEngine",
+      "esri/Graphic",
+      "esri/widgets/Home",
+      "esri/widgets/Locate",
+      "esri/widgets/Search",
+      "esri/widgets/Compass"
+    ], function(Map, MapView, WebMap, FeatureLayer, geometryEngine, Graphic, Home, Locate, Search, Compass) {
+      const webmap = new WebMap({
+        portalItem: {
+          id: "5c1a184a88fa44bc80cf7a22ea01bb46"
+        }
+      });
+      var view = new MapView({
+        container: "viewDiv",
+        map: webmap,
+        zoom: 4,
+      });
+      let homeWidget = new Home({
+        view: view
+      });
+      let locateWidget = new Locate({
+        view: view, // Attaches the Locate button to the view
+      });
+      let searchWidget = new Search({
+        view: view
+      });
+      let CompassWidget = new Compass({
+        view: view
+      });
+      // Adds the search widget below other elements in
+      // the top left corner of the view
+      view.ui.add(searchWidget, {
+        position: "top-left",
+        index: 0
+      });
+      // adds the home widget to the top left corner of the MapView
+      view.ui.add(homeWidget, "top-left");
+      view.ui.add(locateWidget, "top-left");
+      view.ui.add(CompassWidget, "top-left");
+      //create popup
+      var popupElement = document.getElementById('customPopup');
+      var titleElement = document.getElementById('title');
+      view.ui.add(popupElement, {
+        position: "bottom-left",
+        index: 1
+      });
+      var attributionContainer = document.createElement('div');
+      var attributionText = document.createElement('div');
+      attributionContainer.appendChild(attributionText)
+      attributionContainer.id = "attribution"
+      attributionText.innerHTML = `
+      Map by <a href="https://www.linkedin.com/in/bruno-sousa-69224a175/" target="_blank">Bruno Sousa</a>, <a href="https://spatialstudieslab.rice.edu/" target="_blank">Rice University, CRC - SSL</a>.</br>
+      Eclipse data derived from <a href="https://svs.gsfc.nasa.gov/5123/" target="_blank">NASA SVS shapefiles</a>.
+      `
+      view.ui.add(attributionContainer, "bottom-right");
+      // Function to handle cursor entering a UI component
+      var uiComponents = view.ui._components
+
+      function handleMouseOver() {
+        let svgElementContainer = document.getElementById("customSvgEclipse")
+        svgElementContainer.style.display = "none"
+        view.container.style.cursor = 'default';
+      }
+      uiComponents.forEach(function(component) {
+        component.node.addEventListener("mouseover", handleMouseOver);
+      })
+      view.when(function() {
+        var layer = webmap.layers.items.find(function(layer) {
+          return layer.title === "Center_Line";
+        })
+        var umbraLayer = webmap.layers.items.find(function(layer) {
+          return layer.title === "umbra";
+        });
+        var umbraLayerCenterPoint = webmap.layers.items.find(function(layer) {
+          return layer.title === "umbraCenterPoint";
+        });
+        let angleFromNorth
+        // Prepare a simple marker symbol
+        var markerSymbol = {
+          type: "picture-marker", // Specify the type as picture-marker
+          url: "https://s3.us-east-1.amazonaws.com/aubintime.spatialstudieslab.org/assets/icons/eclipse.png", // URL to the image
+          width: "80px", // Specify the width of the image
+          height: "80px", // Specify the height of the image
+          angle: 0
+        };
+        var arrow_url = "https://s3.us-east-1.amazonaws.com/aubintime.spatialstudieslab.org/assets/icons/arrowup.png"
+        // Graphic to represent the closest point
+        var closestPointGraphic = new Graphic({
+          symbol: markerSymbol
+        });
+        view.graphics.add(closestPointGraphic);
+        view.container.style.cursor = 'none';
+        var svgElement = document.createElement('div');
+        svgElement.id = 'customSvgEclipse';
+        svgElement.style.position = 'absolute';
+        svgElement.style.pointerEvents = 'none'; // Ensures the SVG doesn't interfere with map interaction
+        view.container.appendChild(svgElement);
+        // Function to update the SVG string (example with static offsets for now)
+        function updateSvgCirclePosition(newXPosition, newYPosition) {
+          // Assuming newXPosition and newYPosition are calculated based on your requirements
+          // Update the SVG string with the new position for the black circle
+          var svgString = [
+            '<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg">',
+            '<defs>',
+            '<clipPath id="clip">',
+            '<circle cx="20" cy="20" r="20" />',
+            '</clipPath>',
+            '</defs>',
+            '<circle cx="20" cy="20" r="20" fill="#FDB813" />',
+            '<circle cx="', newXPosition.toString(), '" cy="', newYPosition.toString(), '" r="20" fill="black" clip-path="url(#clip)" />',
+            '</svg>'
+          ].join('');
+          // Assuming 'customSvgArrow' is the ID of your SVG container
+          var svgContainer = document.getElementById('customSvgEclipse');
+          if (svgContainer) {
+            svgContainer.innerHTML = svgString;
+          } else {
+            console.error('SVG container not found');
+          }
+        }
+
+        function rotateSvg(angleFromNorth) {
+          var svgContainer = document.getElementById('customSvgEclipse'); // Assuming this is your SVG container's ID
+          svgContainer.style.transform = `rotate(${angleFromNorth}deg)`;
+          svgContainer.style.transformOrigin = '50% 50%'; // Center of the SVG
+        }
+
+        function calculateUpwardShift(obscuratioPercentage) {
+          // Assuming the maximum shift is 50 units upwards for 0% overlap
+          var maxShift = 40;
+          var shiftMagnitude = maxShift * (1 - obscuratioPercentage);
+          // Calculate new y position for the black circle
+          var newYPosition = (20 - shiftMagnitude); // Subtract because we're moving up
+          return newYPosition;
+        }
+
+        function minutesToHHhMM(minutes) {
+          // Calculate hours and minutes from the total minutes
+          const hours = Math.floor(minutes / 60);
+          const mins = minutes % 60;
+          // Format the hours and minutes to ensure two digits and concatenate with 'h'
+          return `${hours.toString().padStart(2, '0')}h${mins.toString().padStart(2, '0')}m`;
+        }
+        let startTimeUTC
+        let duration
+        view.on("pointer-move", function(event) {
+          var query = umbraLayerCenterPoint.createQuery();
+          query.geometry = closestPointGraphic.geometry; // Use the point as the query geometry
+          query.spatialRelationship = "intersects"; // This can be adjusted based on your needs
+          query.distance = 100; // Specify a search distance (in the layer's units)
+          query.units = "miles"; // Specify the units for the distance
+          query.returnGeometry = true;
+          query.outFields = ["*"]; // Adjust as needed to return specific fields
+          // Execute the query
+          umbraLayerCenterPoint.queryFeatures(query).then(function(response) {
+            var features = response.features;
+            if (features.length > 0) {
+              // Assuming you want the first feature if multiple are found
+              var nearestFeature = features[0];
+              if (umbraLayer) {
+                // Use the geometry of closestPointGraphic for the query
+                var queryPoly = umbraLayer.createQuery(); // Use the position of the closestPointGraphic
+                queryPoly.where = `Centerlat=` + nearestFeature.attributes.CenterLat; // Find features that intersect this point
+                queryPoly.returnGeometry = true; // Geometry is not needed for the log
+                queryPoly.outFields = ["*"]; // Specify the fields to return
+                umbraLayer.queryFeatures(queryPoly).then(function(response) {
+                  var features = response.features;
+                  features.forEach(function(feature) {
+                    // umbraGraphic.geometry = feature.geometry;
+                    // Log the UTCTime field of each feature
+                    // console.log("UTCTime:", feature.attributes.UTCTime);
+                    startTimeUTC = feature.attributes.UTCTime
+                    duration = Math.round(feature.attributes.Duration)
+                  });
+                }).catch(function(error) {
+                  console.error("Query failed: ", error);
+                });
+              }
+            } else {
+              console.log("No features found near the specified point.");
+            }
+          }).catch(function(error) {
+            console.error("Query failed: ", error);
+          });
+          svgElement.style.left = event.x - 20 + 'px';
+          svgElement.style.top = event.y - 20 + 'px';
+          var point = view.toMap({
+            x: event.x,
+            y: event.y
+          });
+          layer.queryFeatures().then(function(results) {
+            var lineGeometry = results.features[0].geometry;
+            var closestPoint = geometryEngine.nearestCoordinate(lineGeometry, point).coordinate;
+            // Calculate angle in radians and convert to degrees
+            var angleRadians = Math.atan2(closestPoint.y - point.y, closestPoint.x - point.x);
+            var angleDegrees = angleRadians * (180 / Math.PI);
+            // Adjust from the east to the north
+            angleFromNorth = (90 - angleDegrees + 360) % 360;
+            // arrow.style.transform = "rotate(" + angleFromNorth + "deg)";
+            // Update the position of the closest point graphic
+            closestPointGraphic.geometry = closestPoint;
+          });
+          // Now, add a hitTest to log the Obscuratio attribute
+          view.hitTest(event).then(function(response) {
+            // Check if there are any results from the hitTest
+            if (response.results.length > 0) {
+              svgElement.style.display = "block";
+              view.container.style.cursor = 'none';
+              var obscuratioLayer = response.results.find(function(result) {
+                return result.graphic.layer?.title === "ObscuRatio_VectorTile_Unique"
+              });
+              var umbraLayer = response.results.find(function(result) {
+                return result.graphic.layer?.title === "umbra"
+              });
+              var timeZoneLayer = response.results.find(function(result) {
+                return result.graphic.layer?.title === "World Time Zones"
+              });
+              // Assuming the feature layer with Obscuratio is among the results
+              if (obscuratioLayer) {
+                popupElement.style.display = "flex"
+                // Log the Obscuratio attribute of the feature
+                var obscuratioValue = obscuratioLayer.graphic.attributes.layerName;
+                // Extracting the value between "/" and "-"
+                var start = obscuratioValue.indexOf('/') + 1;
+                var end = obscuratioValue.indexOf('/1');
+                var percentageOverlap = obscuratioValue.substring(start, end);
+                var newYPosition = calculateUpwardShift(percentageOverlap);
+                // Assuming you have a function to update the SVG's circle positions
+                updateSvgCirclePosition(20, newYPosition); // x remains 50 for upward shift
+                rotateSvg(angleFromNorth);
+                if (umbraLayer) {
+                  updateSvgCirclePosition(20, 20);
+                }
+                const [hours, minutes, seconds] = startTimeUTC.split(":");
+                const utcDate = new Date(2024, 3, 8, parseInt(hours), parseInt(minutes), parseInt(seconds));
+                const localTime = new Date(utcDate.getTime() + (timeZoneLayer.graphic.attributes.ZONE * 60 * 60 * 1000));
+                if (umbraLayer) {
+                  titleElement.innerHTML = `   
+                <strong style="font-size: 20px;">TOTAL</strong></br>
+                Start Time (UTC): <strong>${parseInt(hours)+":"+minutes}</strong></br>
+                Entire Eclipse Duration: ${minutesToHHhMM(duration)}</br>
+                Coordinates: <strong>${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}</strong></br>
+        `
+                } else {
+                  titleElement.innerHTML = `   
+                <strong style="font-size: 20px;">PARTIAL</strong></br>
+                Start Time (UTC): <strong>${parseInt(hours)+":"+minutes}</strong></br>
+                Obscuration: <strong>${Math.round(percentageOverlap*100)}%</strong></br>
+                Coordinates: <strong>${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}</strong></br>
+        `
+                }
+              } else {
+                popupElement.style.display = "none"
+                updateSvgCirclePosition(100, 100);
+              }
+            }
+          });
+        });
+        let tooltipTimeout;
+        let clickedPointSymbol = {
+          type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
+          style: "round",
+          color: "red",
+          size: "15px", // pixels
+          outline: { // autocasts as new SimpleLineSymbol()
+            color: "black",
+            width: 3 // points
+          }
+        };
+        // Graphic to represent the closest point
+        var clickedPoint = new Graphic({
+          symbol: clickedPointSymbol
+        });
+        view.on("click", function(event) {
+          view.hitTest(event).then(function(response) {
+            // Check if there are any results from the hitTest
+            if (response.results.length > 0) {
+              svgElement.style.display = "block";
+              view.container.style.cursor = 'none';
+              var obscuratioLayer = response.results.find(function(result) {
+                return result.graphic.layer?.title === "ObscuRatio_VectorTile_Unique"
+              });
+              if (obscuratioLayer) {
+          var point = view.toMap({
+            x: event.x,
+            y: event.y
+          });
+          clickedPoint.geometry = point
+          view.graphics.add(clickedPoint);
+
+          function copyTextToClipboard() {
+            navigator.clipboard.writeText(titleElement.innerText) // Use the Clipboard API to copy the text
+              .then(() => {
+                showTooltip('Data copied to clipboard', event.x, event.y);
+                // Optionally, inform the user that the text was successfully copied
+                // For example, by displaying a message or changing the button's appearance
+              })
+              .catch(err => {
+                console.error('Failed to copy text: ', err);
+                // Handle potential errors (e.g., clipboard access denied)
+                // Inform the user about the failure
+              });
+          }
+          copyTextToClipboard()                
+              } else {
+                showTooltip('Location not on eclipse path.', event.x, event.y);
+            view.graphics.remove(clickedPoint);
+              }
+            }
+          })
+        })
+        const tooltip = document.getElementById('mapTooltip');
+        // Function to show tooltip
+        function showTooltip(message, x, y) {
+          tooltip.innerText = message; // Update message
+          tooltip.style.display = 'block'; // Make it visible
+          tooltip.style.left = `${x}px`; // Update horizontal position
+          tooltip.style.top = `${y}px`; // Update vertical position
+          // Temporarily add the tooltip to the view UI in the top-left corner
+          // The actual positioning will be done via CSS
+          view.ui.add(tooltip, {
+            position: "top-left",
+            index: 0
+          });
+          // Clear the previous timeout if it exists
+          if (tooltipTimeout) {
+            clearTimeout(tooltipTimeout);
+          }
+          // Set a new timeout to hide and remove the tooltip
+          tooltipTimeout = setTimeout(() => {
+            view.graphics.remove(clickedPoint);
+            tooltip.style.display = 'none'; // Hide it
+            view.ui.remove(tooltip); // Remove from the UI
+          }, 2000); // Adjust timing as needed
+        }
+      })
+    });
+  </script>
+</head>
+
+<body>
+  <div id="viewDiv">
+    <div id="mapTooltip" class="tooltip" style="display: none;"></div>
+    <div id="customPopup">
+      <div id="title">
+      </div>
+    </div>
+</body>
+
+</html>
+<!-- partial -->
+  
+</body>
+</html>
