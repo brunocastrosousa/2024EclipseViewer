@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
-  <title>Cursor to Line Angle with Visual Aid - ArcGIS API for JavaScript</title>
+  <title>2024 Eclipse Viewer</title>
   <link rel="stylesheet" href="https://js.arcgis.com/4.23/esri/themes/light/main.css">
+  <script type="module" src="https://js.arcgis.com/calcite-components/2.4.0/calcite.esm.js"></script>
   <script src="https://js.arcgis.com/4.23/"></script>
 
   <style>
@@ -50,10 +51,22 @@
       z-index: 1 !important;
       width: auto;
       height: auto;
-      border-radius: 10px;
       background-color: white;
-      padding: 10px;
-      box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+      padding: 5px;
+      overflow: hidden;
+    }
+
+    #fullEclipseDataContainer {
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1 !important;
+      width: auto;
+      height: auto;
+      bottom: 110px;
+      left: 15px;
+      background-color: white;
+      padding: 5px;
       overflow: hidden;
     }
 
@@ -66,8 +79,31 @@
       height: auto;
       background-color: white;
       padding: 5px;
-      box-shadow: 0 1px 1px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
       overflow: hidden;
+    }
+
+    #websiteTitle {
+      text-align: right;
+      width: auto;
+      height: auto;
+      color: white;
+      background-color: rgba(0, 0, 0, 0.1);
+      padding: 5px;
+      backdrop-filter: blur(10px);
+      overflow: hidden;
+      box-shadow: 0 0 0 0;
+    }
+
+    #pageInfo {
+      text-align: justify;
+      width: 200px;
+      height: auto;
+      color: white;
+      background-color: rgba(0, 0, 0, 0.1);
+      padding: 5px;
+      backdrop-filter: blur(10px);
+      overflow: hidden;
+      box-shadow: 0 0 0 0;
     }
 
     /* CSS for the tooltip */
@@ -97,8 +133,9 @@
       "esri/widgets/Home",
       "esri/widgets/Locate",
       "esri/widgets/Search",
-      "esri/widgets/Compass"
-    ], function(Map, MapView, WebMap, FeatureLayer, geometryEngine, Graphic, Home, Locate, Search, Compass) {
+      "esri/widgets/Compass",
+      "esri/widgets/Expand"
+    ], function(Map, MapView, WebMap, FeatureLayer, geometryEngine, Graphic, Home, Locate, Search, Compass, Expand) {
       const webmap = new WebMap({
         portalItem: {
           id: "5c1a184a88fa44bc80cf7a22ea01bb46"
@@ -121,23 +158,17 @@
       let CompassWidget = new Compass({
         view: view
       });
-      // Adds the search widget below other elements in
-      // the top left corner of the view
-      view.ui.add(searchWidget, {
-        position: "top-left",
-        index: 0
+      var pageInfoElement = document.createElement('div');
+      pageInfoElement.id = "pageInfo"
+      let expand = new Expand({
+        view: view,
+        expandIcon: "https://s3.us-east-1.amazonaws.com/aubintime.spatialstudieslab.org/assets/icons/eclipse.png",
+        expandTooltip: "About",
+        content: pageInfoElement,
       });
-      // adds the home widget to the top left corner of the MapView
-      view.ui.add(homeWidget, "top-left");
-      view.ui.add(locateWidget, "top-left");
-      view.ui.add(CompassWidget, "top-left");
       //create popup
       var popupElement = document.getElementById('customPopup');
-      var titleElement = document.getElementById('title');
-      view.ui.add(popupElement, {
-        position: "bottom-left",
-        index: 1
-      });
+      var eclipsedataElement = document.getElementById('eclipseDataPreview');
       var attributionContainer = document.createElement('div');
       var attributionText = document.createElement('div');
       attributionContainer.appendChild(attributionText)
@@ -146,7 +177,28 @@
       Map by <a href="https://www.linkedin.com/in/bruno-sousa-69224a175/" target="_blank">Bruno Sousa</a>, <a href="https://spatialstudieslab.rice.edu/" target="_blank">Rice University, CRC - SSL</a>.</br>
       Eclipse data derived from <a href="https://svs.gsfc.nasa.gov/5123/" target="_blank">NASA SVS shapefiles</a>.
       `
+      var websiteTitleElement = document.createElement('div');
+      websiteTitleElement.id = "websiteTitle"
+      websiteTitleElement.innerHTML = `
+      <strong style="font-size: 40px;">2024 April 8th Eclipse Viewer</strong></br>
+      `
+      pageInfoElement.innerHTML = `
+      Hovering your cursor shows how the eclipse would be biewed from that location.
+      <br style="font-size: 10px">Click on the map to copy the data to clipboard.</br>
+      `
+      var fullEclipseDataContainer = document.getElementById("fullEclipseDataContainer")
+      view.ui.add(websiteTitleElement, "top-right")
       view.ui.add(attributionContainer, "bottom-right");
+      view.ui.add(searchWidget, {
+        position: "top-left",
+        index: 0
+      });
+      view.ui.add(popupElement, "bottom-left");
+      view.ui.add(fullEclipseDataContainer, "manual")
+      view.ui.add(homeWidget, "top-left");
+      view.ui.add(locateWidget, "top-left");
+      view.ui.add(CompassWidget, "top-left");
+      view.ui.add(expand, "top-left")
       // Function to handle cursor entering a UI component
       var uiComponents = view.ui._components
 
@@ -228,12 +280,12 @@
           return newYPosition;
         }
 
-        function minutesToHHhMM(minutes) {
-          // Calculate hours and minutes from the total minutes
-          const hours = Math.floor(minutes / 60);
-          const mins = minutes % 60;
-          // Format the hours and minutes to ensure two digits and concatenate with 'h'
-          return `${hours.toString().padStart(2, '0')}h${mins.toString().padStart(2, '0')}m`;
+        function secondsToMMmSSs(seconds) {
+          // Calculate minutes and seconds from the total seconds
+          const minutes = Math.floor(seconds / 60);
+          const secs = seconds % 60;
+          // Format the minutes and seconds to ensure two digits and concatenate with 'm' and 's' respectively
+          return `${minutes.toString().padStart(2, '0')}m${secs.toString().padStart(2, '0')}s`;
         }
         let startTimeUTC
         let duration
@@ -329,18 +381,18 @@
                 const utcDate = new Date(2024, 3, 8, parseInt(hours), parseInt(minutes), parseInt(seconds));
                 const localTime = new Date(utcDate.getTime() + (timeZoneLayer.graphic.attributes.ZONE * 60 * 60 * 1000));
                 if (umbraLayer) {
-                  titleElement.innerHTML = `   
+                  eclipsedataElement.innerHTML = `  
+                  <div style="color: grey; position: absolute; top: 5px; right: 15px;">Preview</div>
                 <strong style="font-size: 20px;">TOTAL</strong></br>
-                Start Time (UTC): <strong>${parseInt(hours)+":"+minutes}</strong></br>
-                Entire Eclipse Duration: ${minutesToHHhMM(duration)}</br>
-                Coordinates: <strong>${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}</strong></br>
+                Obscuration: <strong>100%</strong></br>
+                Coordinates: <strong>${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}</strong></br>
         `
                 } else {
-                  titleElement.innerHTML = `   
+                  eclipsedataElement.innerHTML = `   
+                  <div style="color: grey; position: absolute; top: 5px; right: 15px;">Preview</div>
                 <strong style="font-size: 20px;">PARTIAL</strong></br>
-                Start Time (UTC): <strong>${parseInt(hours)+":"+minutes}</strong></br>
                 Obscuration: <strong>${Math.round(percentageOverlap*100)}%</strong></br>
-                Coordinates: <strong>${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}</strong></br>
+                Coordinates: <strong>${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}</strong></br>
         `
                 }
               } else {
@@ -365,43 +417,108 @@
         var clickedPoint = new Graphic({
           symbol: clickedPointSymbol
         });
+        
         view.on("click", function(event) {
-          view.hitTest(event).then(function(response) {
-            // Check if there are any results from the hitTest
-            if (response.results.length > 0) {
-              svgElement.style.display = "block";
-              view.container.style.cursor = 'none';
-              var obscuratioLayer = response.results.find(function(result) {
-                return result.graphic.layer?.title === "ObscuRatio_VectorTile_Unique"
-              });
-              if (obscuratioLayer) {
+          document.getElementById('fullEclipseDataContainer').style.display = "block"
+          document.getElementById('fullEclipseData').textContent = "loading..."
           var point = view.toMap({
             x: event.x,
             y: event.y
           });
-          clickedPoint.geometry = point
-          view.graphics.add(clickedPoint);
 
-          function copyTextToClipboard() {
-            navigator.clipboard.writeText(titleElement.innerText) // Use the Clipboard API to copy the text
-              .then(() => {
-                showTooltip('Data copied to clipboard', event.x, event.y);
-                // Optionally, inform the user that the text was successfully copied
-                // For example, by displaying a message or changing the button's appearance
+          function fetchEclipseData() {
+            // Target URL
+            const targetUrl = `https://aa.usno.navy.mil/api/eclipses/solar/date?date=2024-04-08&coords=${point.latitude},${point.longitude}&height=1`;
+            // Proxy URL
+            const proxyUrl = 'https://corsproxy.io/?';
+            // Use the fetch API to retrieve data through the proxy
+            fetch(proxyUrl + targetUrl, {
+                headers: {
+                  'X-Requested-With': 'XMLHttpRequest'
+                }
               })
-              .catch(err => {
-                console.error('Failed to copy text: ', err);
-                // Handle potential errors (e.g., clipboard access denied)
-                // Inform the user about the failure
+              .then(response => {
+                if (!response.ok) {
+                  throw new Error('Network response was not ok');
+                }
+                return response.json();
+              })
+              .then(data => {
+                    // Initialize the formatted string with the description in bold
+    let formattedData = `<strong style="font-size: 17px; line-height: 2;">${data.properties.description}</strong>`;
+    
+    // Add duration and duration of totality (if applicable) in bold
+    formattedData += `<br>Coordinates: <strong>${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}</strong>`
+    formattedData += `<br>Duration of eclipse: <strong>${data.properties.duration}</strong>`;
+    if (data.properties.description.includes("Total Eclipse")) {
+        formattedData += `<br>Duration of Totality: <strong>${data.properties.duration_of_totality}</strong>`;
+    }
+    
+    // Loop through local_data to add times for eclipse events in bold
+    data.properties.local_data.forEach(event => {
+        switch(event.phenomenon) {
+            case "Eclipse Begins":
+                formattedData += `<br>Eclipse Begins: <strong>${event.time}</strong>`;
+                break;
+            case "Totality Begins":
+                if (data.properties.description.includes("Total Eclipse")) {
+                    formattedData += `<br>Totality Begins: <strong>${event.time}</strong>`;
+                }
+                break;
+            case "Totality Ends":
+                if (data.properties.description.includes("Total Eclipse")) {
+                    formattedData += `<br>Totality Ends: <strong>${event.time}</strong>`;
+                }
+                break;
+            case "Eclipse Ends":
+                formattedData += `<br>Eclipse Ends: <strong>${event.time}</strong>`;
+                break;
+        }
+                });
+                // Display the formatted data
+                document.getElementById('fullEclipseData').innerHTML = formattedData;
+              })
+              .catch(error => {
+                console.error('There was a problem with your fetch operation:', error);
+                document.getElementById('fullEclipseData').textContent = `${error}, try again in a few seconds.`;
               });
           }
-          copyTextToClipboard()                
-              } else {
-                showTooltip('Location not on eclipse path.', event.x, event.y);
-            view.graphics.remove(clickedPoint);
-              }
-            }
-          })
+          fetchEclipseData()
+          // view.hitTest(event).then(function(response) {
+          //   // Check if there are any results from the hitTest
+          //   if (response.results.length > 0) {
+          //     svgElement.style.display = "block";
+          //     view.container.style.cursor = 'none';
+          //     var obscuratioLayer = response.results.find(function(result) {
+          //       return result.graphic.layer?.title === "ObscuRatio_VectorTile_Unique"
+          //     });
+          //     if (obscuratioLayer) {
+          //       var point = view.toMap({
+          //         x: event.x,
+          //         y: event.y
+          //       });
+          //       clickedPoint.geometry = point
+          //       // view.graphics.add(clickedPoint);
+          //       function copyTextToClipboard() {
+          //         navigator.clipboard.writeText(eclipsedataElement.innerText) // Use the Clipboard API to copy the text
+          //           .then(() => {
+          //             showTooltip('Data copied to clipboard', event.x, event.y);
+          //             // Optionally, inform the user that the text was successfully copied
+          //             // For example, by displaying a message or changing the button's appearance
+          //           })
+          //           .catch(err => {
+          //             console.error('Failed to copy text: ', err);
+          //             // Handle potential errors (e.g., clipboard access denied)
+          //             // Inform the user about the failure
+          //           });
+          //       }
+          //       copyTextToClipboard()
+          //     } else {
+          //       showTooltip('Location not on eclipse path.', event.x, event.y);
+          //       view.graphics.remove(clickedPoint);
+          //     }
+          //   }
+          // })
         })
         const tooltip = document.getElementById('mapTooltip');
         // Function to show tooltip
@@ -435,8 +552,12 @@
 <body>
   <div id="viewDiv">
     <div id="mapTooltip" class="tooltip" style="display: none;"></div>
+    <div id="fullEclipseDataContainer">
+      <pre style="margin: 0px; font-family: var(--calcite-sans-family); font-size:13px; color: grey;">Click anywhere on the map to know more.</pre>
+      <pre id="fullEclipseData" style="margin: 0px; font-family: var(--calcite-sans-family);"></pre>
+    </div>
     <div id="customPopup">
-      <div id="title">
+      <div id="eclipseDataPreview">
       </div>
     </div>
 </body>
