@@ -46,8 +46,8 @@
 
     #customPopup {
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      align-items: left;
+      justify-content: left;
       z-index: 1 !important;
       width: auto;
       height: auto;
@@ -63,8 +63,6 @@
       z-index: 1 !important;
       width: auto;
       height: auto;
-      bottom: 110px;
-      left: 15px;
       background-color: white;
       padding: 5px;
       overflow: hidden;
@@ -134,8 +132,9 @@
       "esri/widgets/Locate",
       "esri/widgets/Search",
       "esri/widgets/Compass",
-      "esri/widgets/Expand"
-    ], function(Map, MapView, WebMap, FeatureLayer, geometryEngine, Graphic, Home, Locate, Search, Compass, Expand) {
+      "esri/widgets/Expand",
+      "esri/popup/content/CustomContent"
+    ], function(Map, MapView, WebMap, FeatureLayer, geometryEngine, Graphic, Home, Locate, Search, Compass, Expand, CustomContent) {
       const webmap = new WebMap({
         portalItem: {
           id: "5c1a184a88fa44bc80cf7a22ea01bb46"
@@ -166,7 +165,7 @@
         expandTooltip: "About",
         content: pageInfoElement,
       });
-      //create popup
+      //create elements
       var popupElement = document.getElementById('customPopup');
       var eclipsedataElement = document.getElementById('eclipseDataPreview');
       var attributionContainer = document.createElement('div');
@@ -175,7 +174,8 @@
       attributionContainer.id = "attribution"
       attributionText.innerHTML = `
       Map by <a href="https://www.linkedin.com/in/bruno-sousa-69224a175/" target="_blank">Bruno Sousa</a>, <a href="https://spatialstudieslab.rice.edu/" target="_blank">Rice University, CRC - SSL</a>.</br>
-      Eclipse data derived from <a href="https://svs.gsfc.nasa.gov/5123/" target="_blank">NASA SVS shapefiles</a>.
+      Eclipse preview data derived from <a href="https://svs.gsfc.nasa.gov/5123/" target="_blank">NASA SVS</a>.</br>
+      Complete eclipse data from <a href="https://aa.usno.navy.mil/data/api" target="_blank">U.S. NAVY A.A. API</a>.
       `
       var websiteTitleElement = document.createElement('div');
       websiteTitleElement.id = "websiteTitle"
@@ -184,9 +184,11 @@
       `
       pageInfoElement.innerHTML = `
       Hovering your cursor shows how the eclipse would be biewed from that location.
-      <br style="font-size: 10px">Click on the map to copy the data to clipboard.</br>
       `
-      var fullEclipseDataContainer = document.getElementById("fullEclipseDataContainer")
+      var imgDiv = document.createElement('img')
+      imgDiv.id = "eclipseIMG"
+      imgDiv.src = ""
+      //add elements to page
       view.ui.add(websiteTitleElement, "top-right")
       view.ui.add(attributionContainer, "bottom-right");
       view.ui.add(searchWidget, {
@@ -194,7 +196,6 @@
         index: 0
       });
       view.ui.add(popupElement, "bottom-left");
-      view.ui.add(fullEclipseDataContainer, "manual")
       view.ui.add(homeWidget, "top-left");
       view.ui.add(locateWidget, "top-left");
       view.ui.add(CompassWidget, "top-left");
@@ -222,9 +223,10 @@
         });
         let angleFromNorth
         // Prepare a simple marker symbol
+        var eclipsePNGUrl = "https://s3.us-east-1.amazonaws.com/aubintime.spatialstudieslab.org/assets/icons/eclipse.png"
         var markerSymbol = {
           type: "picture-marker", // Specify the type as picture-marker
-          url: "https://s3.us-east-1.amazonaws.com/aubintime.spatialstudieslab.org/assets/icons/eclipse.png", // URL to the image
+          url: eclipsePNGUrl, // URL to the image
           width: "80px", // Specify the width of the image
           height: "80px", // Specify the height of the image
           angle: 0
@@ -242,9 +244,8 @@
         svgElement.style.pointerEvents = 'none'; // Ensures the SVG doesn't interfere with map interaction
         view.container.appendChild(svgElement);
         // Function to update the SVG string (example with static offsets for now)
-        function updateSvgCirclePosition(newXPosition, newYPosition) {
-          // Assuming newXPosition and newYPosition are calculated based on your requirements
-          // Update the SVG string with the new position for the black circle
+        function updateSvgCirclePosition(newXPosition, newYPosition, angleFromNorth) {
+          // Wrap the SVG content in a <g> tag with a transform attribute for rotation
           var svgString = [
             '<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg">',
             '<defs>',
@@ -252,23 +253,18 @@
             '<circle cx="20" cy="20" r="20" />',
             '</clipPath>',
             '</defs>',
+            '<g transform="rotate(', angleFromNorth, ', 20, 20)">', // Apply rotation around the center (20, 20)
             '<circle cx="20" cy="20" r="20" fill="#FDB813" />',
             '<circle cx="', newXPosition.toString(), '" cy="', newYPosition.toString(), '" r="20" fill="black" clip-path="url(#clip)" />',
+            '</g>',
             '</svg>'
           ].join('');
-          // Assuming 'customSvgArrow' is the ID of your SVG container
-          var svgContainer = document.getElementById('customSvgEclipse');
-          if (svgContainer) {
-            svgContainer.innerHTML = svgString;
+          // Set the updated SVG string with rotation to the svgElement
+          if (svgElement) {
+            svgElement.innerHTML = svgString;
           } else {
             console.error('SVG container not found');
           }
-        }
-
-        function rotateSvg(angleFromNorth) {
-          var svgContainer = document.getElementById('customSvgEclipse'); // Assuming this is your SVG container's ID
-          svgContainer.style.transform = `rotate(${angleFromNorth}deg)`;
-          svgContainer.style.transformOrigin = '50% 50%'; // Center of the SVG
         }
 
         function calculateUpwardShift(obscuratioPercentage) {
@@ -290,44 +286,6 @@
         let startTimeUTC
         let duration
         view.on("pointer-move", function(event) {
-          var query = umbraLayerCenterPoint.createQuery();
-          query.geometry = closestPointGraphic.geometry; // Use the point as the query geometry
-          query.spatialRelationship = "intersects"; // This can be adjusted based on your needs
-          query.distance = 100; // Specify a search distance (in the layer's units)
-          query.units = "miles"; // Specify the units for the distance
-          query.returnGeometry = true;
-          query.outFields = ["*"]; // Adjust as needed to return specific fields
-          // Execute the query
-          umbraLayerCenterPoint.queryFeatures(query).then(function(response) {
-            var features = response.features;
-            if (features.length > 0) {
-              // Assuming you want the first feature if multiple are found
-              var nearestFeature = features[0];
-              if (umbraLayer) {
-                // Use the geometry of closestPointGraphic for the query
-                var queryPoly = umbraLayer.createQuery(); // Use the position of the closestPointGraphic
-                queryPoly.where = `Centerlat=` + nearestFeature.attributes.CenterLat; // Find features that intersect this point
-                queryPoly.returnGeometry = true; // Geometry is not needed for the log
-                queryPoly.outFields = ["*"]; // Specify the fields to return
-                umbraLayer.queryFeatures(queryPoly).then(function(response) {
-                  var features = response.features;
-                  features.forEach(function(feature) {
-                    // umbraGraphic.geometry = feature.geometry;
-                    // Log the UTCTime field of each feature
-                    // console.log("UTCTime:", feature.attributes.UTCTime);
-                    startTimeUTC = feature.attributes.UTCTime
-                    duration = Math.round(feature.attributes.Duration)
-                  });
-                }).catch(function(error) {
-                  console.error("Query failed: ", error);
-                });
-              }
-            } else {
-              console.log("No features found near the specified point.");
-            }
-          }).catch(function(error) {
-            console.error("Query failed: ", error);
-          });
           svgElement.style.left = event.x - 20 + 'px';
           svgElement.style.top = event.y - 20 + 'px';
           var point = view.toMap({
@@ -372,27 +330,28 @@
                 var percentageOverlap = obscuratioValue.substring(start, end);
                 var newYPosition = calculateUpwardShift(percentageOverlap);
                 // Assuming you have a function to update the SVG's circle positions
-                updateSvgCirclePosition(20, newYPosition); // x remains 50 for upward shift
-                rotateSvg(angleFromNorth);
+                updateSvgCirclePosition(20, newYPosition, angleFromNorth); // x remains 50 for upward shift
                 if (umbraLayer) {
                   updateSvgCirclePosition(20, 20);
                 }
-                const [hours, minutes, seconds] = startTimeUTC.split(":");
-                const utcDate = new Date(2024, 3, 8, parseInt(hours), parseInt(minutes), parseInt(seconds));
-                const localTime = new Date(utcDate.getTime() + (timeZoneLayer.graphic.attributes.ZONE * 60 * 60 * 1000));
                 if (umbraLayer) {
-                  eclipsedataElement.innerHTML = `  
+                  eclipsedataElement.innerHTML = `
                   <div style="color: grey; position: absolute; top: 5px; right: 15px;">Preview</div>
+                  
+                  <div style="text-align: left;">
                 <strong style="font-size: 20px;">TOTAL</strong></br>
                 Obscuration: <strong>100%</strong></br>
                 Coordinates: <strong>${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}</strong></br>
+                </div>
         `
                 } else {
-                  eclipsedataElement.innerHTML = `   
+                  eclipsedataElement.innerHTML = `
                   <div style="color: grey; position: absolute; top: 5px; right: 15px;">Preview</div>
+                  <div style="text-align: left;">
                 <strong style="font-size: 20px;">PARTIAL</strong></br>
                 Obscuration: <strong>${Math.round(percentageOverlap*100)}%</strong></br>
                 Coordinates: <strong>${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}</strong></br>
+                </div>
         `
                 }
               } else {
@@ -413,26 +372,45 @@
             width: 3 // points
           }
         };
-        // Graphic to represent the closest point
-        var clickedPoint = new Graphic({
-          symbol: clickedPointSymbol
-        });
-        
+
+        function setSvgToImgUsingBlob(svgElement) {
+          var svgString = svgElement.innerHTML;
+          // Include the SVG namespace if not present
+          if (!svgString.includes('xmlns="http://www.w3.org/2000/svg"')) {
+            svgString = svgString.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+          }
+          // Create a Blob from the SVG string
+          var blob = new Blob([svgString], {
+            type: 'image/svg+xml'
+          });
+          // Create an object URL from the Blob
+          var url = URL.createObjectURL(blob);
+          // Use the object URL as the image source
+          imgDiv.src = url;
+          // Optionally, release the object URL after setting it to free memory
+          // imgElement.onload = () => URL.revokeObjectURL(url);
+          console.log(imgDiv.style.transform)
+          return url
+        }
+        let eclipseImgUrl
+        document.onclick = function(event) {
+          // Compensate for IE<9's non-standard event model
+          //
+          if (event === undefined) event = window.event;
+          var target = 'target' in event ? event.target : event.srcElement;
+          eclipseImgUrl = setSvgToImgUsingBlob(svgElement)
+        };
         view.on("click", function(event) {
-          document.getElementById('fullEclipseDataContainer').style.display = "block"
-          document.getElementById('fullEclipseData').textContent = "loading..."
+          event.stopPropagation();
           var point = view.toMap({
             x: event.x,
             y: event.y
           });
 
           function fetchEclipseData() {
-            // Target URL
             const targetUrl = `https://aa.usno.navy.mil/api/eclipses/solar/date?date=2024-04-08&coords=${point.latitude},${point.longitude}&height=1`;
-            // Proxy URL
-            const proxyUrl = 'https://corsproxy.io/?';
-            // Use the fetch API to retrieve data through the proxy
-            fetch(proxyUrl + targetUrl, {
+            const proxyUrl = 'https://corsproxy.io/?'; // Ensure this proxy URL is valid or use your server endpoint
+            fetch(proxyUrl + encodeURIComponent(targetUrl), {
                 headers: {
                   'X-Requested-With': 'XMLHttpRequest'
                 }
@@ -444,46 +422,95 @@
                 return response.json();
               })
               .then(data => {
-                    // Initialize the formatted string with the description in bold
-    let formattedData = `<strong style="font-size: 17px; line-height: 2;">${data.properties.description}</strong>`;
-    
-    // Add duration and duration of totality (if applicable) in bold
-    formattedData += `<br>Coordinates: <strong>${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}</strong>`
-    formattedData += `<br>Duration of eclipse: <strong>${data.properties.duration}</strong>`;
-    if (data.properties.description.includes("Total Eclipse")) {
-        formattedData += `<br>Duration of Totality: <strong>${data.properties.duration_of_totality}</strong>`;
-    }
-    
-    // Loop through local_data to add times for eclipse events in bold
-    data.properties.local_data.forEach(event => {
-        switch(event.phenomenon) {
-            case "Eclipse Begins":
-                formattedData += `<br>Eclipse Begins: <strong>${event.time}</strong>`;
-                break;
-            case "Totality Begins":
+                let formattedData = `<div style="font-size: 17px; line-height: 1;">${data.properties.description}</div>`;
+                // Add duration and duration of totality (if applicable) in bold
+                formattedData += `<br>Coordinates: <strong>${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}</strong>`
+                formattedData += `<br>Duration of eclipse: <strong>${data.properties.duration}</strong>`;
                 if (data.properties.description.includes("Total Eclipse")) {
-                    formattedData += `<br>Totality Begins: <strong>${event.time}</strong>`;
+                  formattedData += `<br>Duration of Totality: <strong>${data.properties.duration_of_totality}</strong>`;
                 }
-                break;
-            case "Totality Ends":
-                if (data.properties.description.includes("Total Eclipse")) {
-                    formattedData += `<br>Totality Ends: <strong>${event.time}</strong>`;
-                }
-                break;
-            case "Eclipse Ends":
-                formattedData += `<br>Eclipse Ends: <strong>${event.time}</strong>`;
-                break;
-        }
+                // Loop through local_data to add times for eclipse events in bold
+                data.properties.local_data.forEach(event => {
+                  switch (event.phenomenon) {
+                    case "Eclipse Begins":
+                      formattedData += `<br>Eclipse Begins (UTC): <strong>${event.time}</strong>`;
+                      break;
+                    case "Totality Begins":
+                      if (data.properties.description.includes("Total Eclipse")) {
+                        formattedData += `<br>Totality Begins (UTC): <strong>${event.time}</strong>`;
+                      }
+                      break;
+                    case "Totality Ends":
+                      if (data.properties.description.includes("Total Eclipse")) {
+                        formattedData += `<br>Totality Ends (UTC): <strong>${event.time}</strong>`;
+                      }
+                      break;
+                    case "Eclipse Ends":
+                      formattedData += `<br>Eclipse Ends (UTC): <strong>${event.time}</strong>`;
+                      break;
+                  }
                 });
-                // Display the formatted data
-                document.getElementById('fullEclipseData').innerHTML = formattedData;
+                //                   if (data.properties.description.includes("Total Eclipse")) {
+                //                           formattedData += `<br><img src="${eclipsePNGUrl}"></img>`;
+                //                         } else {
+                //                           formattedData += `<br><img src="${eclipseImgUrl}"></img>`;
+                //                         }
+                // Update popup content with the fetched data
+                let customPopupContent = new CustomContent({
+                  outFields: ["*"],
+                  creator: () => {
+                    const container = document.createElement("div");
+                    container.style.display = "flex"
+                    container.style.overflow = "hidden";
+                    // Assuming 'formattedData' is a string of HTML
+                    const dataDiv = document.createElement("div");
+                    dataDiv.innerHTML = formattedData; // Set the innerHTML to your formatted data
+                    // Create an image element
+                    const image = document.createElement("img");
+                    image.style.cssText = `
+                    margin-top: 50px;
+                    width: auto;
+                    height: 50px;
+                    `
+                    if (data.properties.description.includes("Total Eclipse")) {
+                      image.src = eclipsePNGUrl;
+                      image.style.cssText = `
+                    margin-top: 50px;
+                    width: auto;
+                    height: 70px;
+                    `
+                    } else {
+                      image.src = eclipseImgUrl;
+                    }
+                    container.appendChild(dataDiv);
+                    container.appendChild(image);
+                    return container;
+                  }
+                });
+                // Define the popup template
+                var popupTemplate = {
+                  title: "Eclipse Data",
+                  content: [customPopupContent]
+                };
+                // Create a point graphic for the clicked location
+                var clickedPointGraphic = new Graphic({
+                  geometry: point,
+                  symbol: clickedPointSymbol,
+                  popupTemplate: popupTemplate
+                });
+                // Show the popup at the clicked location before data is fetched
+                view.popup.open({
+                  location: point, // location of the popup
+                  features: [clickedPointGraphic], // Pass the graphic to the popup
+                  updateLocationEnabled: true // Allows the popup to update its location based on map view changes
+                });
               })
               .catch(error => {
                 console.error('There was a problem with your fetch operation:', error);
-                document.getElementById('fullEclipseData').textContent = `${error}, try again in a few seconds.`;
+                view.popup.content = `Error fetching eclipse data: ${error.message}`;
               });
           }
-          fetchEclipseData()
+          fetchEclipseData();
           // view.hitTest(event).then(function(response) {
           //   // Check if there are any results from the hitTest
           //   if (response.results.length > 0) {
@@ -520,30 +547,6 @@
           //   }
           // })
         })
-        const tooltip = document.getElementById('mapTooltip');
-        // Function to show tooltip
-        function showTooltip(message, x, y) {
-          tooltip.innerText = message; // Update message
-          tooltip.style.display = 'block'; // Make it visible
-          tooltip.style.left = `${x}px`; // Update horizontal position
-          tooltip.style.top = `${y}px`; // Update vertical position
-          // Temporarily add the tooltip to the view UI in the top-left corner
-          // The actual positioning will be done via CSS
-          view.ui.add(tooltip, {
-            position: "top-left",
-            index: 0
-          });
-          // Clear the previous timeout if it exists
-          if (tooltipTimeout) {
-            clearTimeout(tooltipTimeout);
-          }
-          // Set a new timeout to hide and remove the tooltip
-          tooltipTimeout = setTimeout(() => {
-            view.graphics.remove(clickedPoint);
-            tooltip.style.display = 'none'; // Hide it
-            view.ui.remove(tooltip); // Remove from the UI
-          }, 2000); // Adjust timing as needed
-        }
       })
     });
   </script>
@@ -551,14 +554,10 @@
 
 <body>
   <div id="viewDiv">
-    <div id="mapTooltip" class="tooltip" style="display: none;"></div>
-    <div id="fullEclipseDataContainer">
-      <pre style="margin: 0px; font-family: var(--calcite-sans-family); font-size:13px; color: grey;">Click anywhere on the map to know more.</pre>
-      <pre id="fullEclipseData" style="margin: 0px; font-family: var(--calcite-sans-family);"></pre>
-    </div>
     <div id="customPopup">
       <div id="eclipseDataPreview">
       </div>
+      <div style="text-align: left; margin: 0px; font-family: var(--calcite-sans-family); font-size:12px; color: grey; padding-top: 4px">Click anywhere on the map to know more.</div>
     </div>
 </body>
 
