@@ -35,15 +35,6 @@
       border: 1px solid #ccc;
     }
 
-    .arrow {
-      width: 40px;
-      height: 40px;
-      position: absolute;
-      top: 60px;
-      left: 20px;
-      transform-origin: 50% 50%;
-    }
-
     #customPopup {
       flex-direction: column;
       align-items: left;
@@ -54,6 +45,7 @@
       background-color: white;
       padding: 5px;
       overflow: hidden;
+      border-radius: 5px;
     }
 
     #fullEclipseDataContainer {
@@ -66,6 +58,7 @@
       background-color: white;
       padding: 5px;
       overflow: hidden;
+      border-radius: 5px;
     }
 
     #attribution {
@@ -78,6 +71,7 @@
       background-color: white;
       padding: 5px;
       overflow: hidden;
+      border-radius: 5px;
     }
 
     #websiteTitle {
@@ -90,6 +84,7 @@
       backdrop-filter: blur(10px);
       overflow: hidden;
       box-shadow: 0 0 0 0;
+      border-radius: 5px;
     }
 
     #pageInfo {
@@ -175,15 +170,16 @@
       attributionText.innerHTML = `
       Map by <a href="https://www.linkedin.com/in/bruno-sousa-69224a175/" target="_blank">Bruno Sousa</a>, <a href="https://spatialstudieslab.rice.edu/" target="_blank">Rice University, CRC - SSL</a>.</br>
       Eclipse preview data derived from <a href="https://svs.gsfc.nasa.gov/5123/" target="_blank">NASA SVS</a>.</br>
-      Complete eclipse data from <a href="https://aa.usno.navy.mil/data/api" target="_blank">U.S. NAVY A.A. API</a>.
+      Detailed eclipse data from <a href="https://aa.usno.navy.mil/data/api" target="_blank">U.S. NAVY A.A. API</a>.
       `
       var websiteTitleElement = document.createElement('div');
       websiteTitleElement.id = "websiteTitle"
       websiteTitleElement.innerHTML = `
-      <strong style="font-size: 40px;">2024 April 8th Eclipse Viewer</strong></br>
+      <strong style="font-size: 40px;">2024 April 8th Eclipse</strong></br>
       `
       pageInfoElement.innerHTML = `
       Hovering your cursor shows how the eclipse would be biewed from that location.
+      Click anywhere on the map to know more.
       `
       var imgDiv = document.createElement('img')
       imgDiv.id = "eclipseIMG"
@@ -406,111 +402,131 @@
             x: event.x,
             y: event.y
           });
+          view.hitTest(event).then(function(response) {
+            var obscuratioLayer = response.results.find(function(result) {
+              return result.graphic.layer?.title === "ObscuRatio_VectorTile_Unique"
+            });
+            if (obscuratioLayer) {
+              // Define the popup template
+              var popupTemplate = {
+                title: "Eclipse Data",
+                content: "Loading data..."
+              };
+              // Create a point graphic for the clicked location
+              var clickedPointGraphic = new Graphic({
+                geometry: point,
+                symbol: clickedPointSymbol,
+                popupTemplate: popupTemplate
+              });
+              // Show the popup at the clicked location before data is fetched
+              view.popup.open({
+                location: point, // location of the popup
+                features: [clickedPointGraphic], // Pass the graphic to the popup
+                updateLocationEnabled: true // Allows the popup to update its location based on map view changes
+              });
 
-          function fetchEclipseData() {
-            const targetUrl = `https://aa.usno.navy.mil/api/eclipses/solar/date?date=2024-04-08&coords=${point.latitude},${point.longitude}&height=1`;
-            const proxyUrl = 'https://corsproxy.io/?'; // Ensure this proxy URL is valid or use your server endpoint
-            fetch(proxyUrl + encodeURIComponent(targetUrl), {
-                headers: {
-                  'X-Requested-With': 'XMLHttpRequest'
-                }
-              })
-              .then(response => {
-                if (!response.ok) {
-                  throw new Error('Network response was not ok');
-                }
-                return response.json();
-              })
-              .then(data => {
-                let formattedData = `<div style="font-size: 17px; line-height: 1;">${data.properties.description}</div>`;
-                // Add duration and duration of totality (if applicable) in bold
-                formattedData += `<br>Coordinates: <strong>${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}</strong>`
-                formattedData += `<br>Duration of eclipse: <strong>${data.properties.duration}</strong>`;
-                if (data.properties.description.includes("Total Eclipse")) {
-                  formattedData += `<br>Duration of Totality: <strong>${data.properties.duration_of_totality}</strong>`;
-                }
-                // Loop through local_data to add times for eclipse events in bold
-                data.properties.local_data.forEach(event => {
-                  switch (event.phenomenon) {
-                    case "Eclipse Begins":
-                      formattedData += `<br>Eclipse Begins (UTC): <strong>${event.time}</strong>`;
-                      break;
-                    case "Totality Begins":
-                      if (data.properties.description.includes("Total Eclipse")) {
-                        formattedData += `<br>Totality Begins (UTC): <strong>${event.time}</strong>`;
+              function fetchEclipseData() {
+                const targetUrl = `https://aa.usno.navy.mil/api/eclipses/solar/date?date=2024-04-08&coords=${point.latitude},${point.longitude}&height=1`;
+                const proxyUrl = 'https://corsproxy.io/?'; // Ensure this proxy URL is valid or use your server endpoint
+                fetch(proxyUrl + encodeURIComponent(targetUrl), {
+                    headers: {
+                      'X-Requested-With': 'XMLHttpRequest'
+                    }
+                  })
+                  .then(response => {
+                    if (!response.ok) {
+                      throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                  })
+                  .then(data => {
+                    let formattedData = `<div style="font-size: 17px; line-height: 1;">${data.properties.description}</div>`;
+                    // Add duration and duration of totality (if applicable) in bold
+                    formattedData += `<br>Coordinates: <a href="https://www.google.com/maps/search/?api=1&query=${point.latitude}%2C${point.longitude}" target="_blank"><strong>${point.latitude.toFixed(5)},${point.longitude.toFixed(5)}</strong></a>`
+                    formattedData += `<br>Duration of eclipse: <strong>${data.properties.duration}</strong>`;
+                    if (data.properties.description.includes("Total Eclipse")) {
+                      formattedData += `<br>Duration of Totality: <strong>${data.properties.duration_of_totality}</strong>`;
+                    }
+                    // Loop through local_data to add times for eclipse events in bold
+                    data.properties.local_data.forEach(event => {
+                      switch (event.phenomenon) {
+                        case "Eclipse Begins":
+                          formattedData += `<br>Eclipse Begins (UTC): <strong>${event.time}</strong>`;
+                          break;
+                        case "Totality Begins":
+                          if (data.properties.description.includes("Total Eclipse")) {
+                            formattedData += `<br>Totality Begins (UTC): <strong>${event.time}</strong>`;
+                          }
+                          break;
+                        case "Totality Ends":
+                          if (data.properties.description.includes("Total Eclipse")) {
+                            formattedData += `<br>Totality Ends (UTC): <strong>${event.time}</strong>`;
+                          }
+                          break;
+                        case "Eclipse Ends":
+                          formattedData += `<br>Eclipse Ends (UTC): <strong>${event.time}</strong>`;
+                          break;
                       }
-                      break;
-                    case "Totality Ends":
-                      if (data.properties.description.includes("Total Eclipse")) {
-                        formattedData += `<br>Totality Ends (UTC): <strong>${event.time}</strong>`;
-                      }
-                      break;
-                    case "Eclipse Ends":
-                      formattedData += `<br>Eclipse Ends (UTC): <strong>${event.time}</strong>`;
-                      break;
-                  }
-                });
-                //                   if (data.properties.description.includes("Total Eclipse")) {
-                //                           formattedData += `<br><img src="${eclipsePNGUrl}"></img>`;
-                //                         } else {
-                //                           formattedData += `<br><img src="${eclipseImgUrl}"></img>`;
-                //                         }
-                // Update popup content with the fetched data
-                let customPopupContent = new CustomContent({
-                  outFields: ["*"],
-                  creator: () => {
-                    const container = document.createElement("div");
-                    container.style.display = "flex"
-                    container.style.overflow = "hidden";
-                    // Assuming 'formattedData' is a string of HTML
-                    const dataDiv = document.createElement("div");
-                    dataDiv.innerHTML = formattedData; // Set the innerHTML to your formatted data
-                    // Create an image element
-                    const image = document.createElement("img");
-                    image.style.cssText = `
+                    });
+                  formattedData += `<br>Obscuration: <strong>${data.properties.obscuration}</strong>`;
+                    // Update popup content with the fetched data
+                    let customPopupContent = new CustomContent({
+                      outFields: ["*"],
+                      creator: () => {
+                        const container = document.createElement("div");
+                        container.style.display = "flex"
+                        container.style.overflow = "hidden";
+                        // Assuming 'formattedData' is a string of HTML
+                        const dataDiv = document.createElement("div");
+                        dataDiv.innerHTML = formattedData; // Set the innerHTML to your formatted data
+                        // Create an image element
+                        const image = document.createElement("img");
+                        image.style.cssText = `
                     margin-top: 50px;
                     width: auto;
                     height: 50px;
                     `
-                    if (data.properties.description.includes("Total Eclipse")) {
-                      image.src = eclipsePNGUrl;
-                      image.style.cssText = `
+                        if (data.properties.description.includes("Total Eclipse")) {
+                          image.src = eclipsePNGUrl;
+                          image.style.cssText = `
                     margin-top: 50px;
                     width: auto;
                     height: 70px;
                     `
-                    } else {
-                      image.src = eclipseImgUrl;
-                    }
-                    container.appendChild(dataDiv);
-                    container.appendChild(image);
-                    return container;
-                  }
-                });
-                // Define the popup template
-                var popupTemplate = {
-                  title: "Eclipse Data",
-                  content: [customPopupContent]
-                };
-                // Create a point graphic for the clicked location
-                var clickedPointGraphic = new Graphic({
-                  geometry: point,
-                  symbol: clickedPointSymbol,
-                  popupTemplate: popupTemplate
-                });
-                // Show the popup at the clicked location before data is fetched
-                view.popup.open({
-                  location: point, // location of the popup
-                  features: [clickedPointGraphic], // Pass the graphic to the popup
-                  updateLocationEnabled: true // Allows the popup to update its location based on map view changes
-                });
-              })
-              .catch(error => {
-                console.error('There was a problem with your fetch operation:', error);
-                view.popup.content = `Error fetching eclipse data: ${error.message}`;
-              });
-          }
-          fetchEclipseData();
+                        } else {
+                          image.src = eclipseImgUrl;
+                        }
+                        container.appendChild(dataDiv);
+                        container.appendChild(image);
+                        return container;
+                      }
+                    });
+                    // Define the popup template
+                    var popupTemplate = {
+                      title: "Eclipse Data",
+                      content: [customPopupContent]
+                    };
+                    // Create a point graphic for the clicked location
+                    var clickedPointGraphic = new Graphic({
+                      geometry: point,
+                      symbol: clickedPointSymbol,
+                      popupTemplate: popupTemplate
+                    });
+                    // Show the popup at the clicked location before data is fetched
+                    view.popup.open({
+                      location: point, // location of the popup
+                      features: [clickedPointGraphic], // Pass the graphic to the popup
+                      updateLocationEnabled: true // Allows the popup to update its location based on map view changes
+                    });
+                  })
+                  .catch(error => {
+                    console.error('There was a problem with your fetch operation:', error);
+                    view.popup.content = `Error fetching eclipse data: ${error.message}`;
+                  });
+              }
+              fetchEclipseData();
+            }
+          })
           // view.hitTest(event).then(function(response) {
           //   // Check if there are any results from the hitTest
           //   if (response.results.length > 0) {
